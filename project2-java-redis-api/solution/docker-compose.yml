@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   api:
     build:
@@ -54,64 +56,5 @@ networks:
   api-net:
     driver: bridge
     ipam:
-      configversion: '3.8'
-
-services:
-  api:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
-    ports:
-      - "8081:8080" # host:container -> port forwarding
-    environment:
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      APP_PORT: 8080
-    depends_on:
-      - redis
-    networks:
-      - api-net
-
-  redis:
-    image: redis:7-alpine
-    volumes:
-      - redis-data:/data # NFS-backed named volume -> survives container restarts
-    command: ["redis-server", "--appendonly", "yes"]
-    depends_on:
-      nfs-server:
-        condition: service_healthy
-    networks:
-      - api-net
-
-  nfs-server:
-    image: itsthenetwork/nfs-server-alpine:latest
-    privileged: true
-    environment:
-      SHARED_DIRECTORY: /data
-    volumes:
-      - nfs-storage:/data
-    networks:
-      api-net:
-        ipv4_address: 172.29.0.10
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 2049 || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-
-volumes:
-  nfs-storage:
-  redis-data:
-    driver: local
-    driver_opts:
-      type: nfs
-      o: "addr=172.29.0.10,rw,nfsvers=4,nolock,soft"
-      device: ":/"
-
-networks:
-  api-net:
-    driver: bridge
-    ipam:
       config:
-        - subnet: 172.29.0.0/24
         - subnet: 172.29.0.0/24

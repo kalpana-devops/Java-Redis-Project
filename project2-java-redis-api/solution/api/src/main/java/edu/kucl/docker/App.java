@@ -47,3 +47,66 @@ respond(exchange, 200, body);
 } catch (Exception e) {
 respond(exchange, 500, "{\"error\":\"" + escape(e.getMessage()) + "\"}");
 }
+}
+}
+/**
+* GET /api/cache?key=NAME
+* Cache-aside pattern: check Redis first; on a miss, run an expensive
+* "computation" (simulated with Thread.sleep), store the result in Redis
+* with a 30-second TTL, then return it.
+*/
+static class CacheHandler implements HttpHandler {
+@Override
+public void handle(HttpExchange exchange) throws IOException {
+String query = exchange.getRequestURI().getQuery();
+String key = parseParam(query, "key");
+if (key == null || key.isBlank()) {
+respond(exchange, 400, "{\"error\":\"missing ?key= parameter\"}");
+return;
+}
+try (Jedis jedis = jedisPool.getResource()) {
+String cacheKey = "cache:" + key;
+String cached = jedis.get(cacheKey);
+boolean hit = cached != null;
+if (!hit) {
+cached = expensiveComputation(key);
+jedis.setex(cacheKey, 30, cached);
+}
+String body = String.format(
+"{\"key\":\"%s\",\"value\":\"%s\",\"cacheHit\":%s}",
+escape(key), escape(cached), hit);
+respond(exchange, 200, body);
+} catch (Exception e) {
+respond(exchange, 500, "{\"error\":\"" + escape(e.getMessage()) + "\"}");
+}
+}
+private String expensiveComputation(String key) throws InterruptedException {
+Thread.sleep(1500); // stands in for a slow DB query / calculation
+return "computed-result-for-" + key + "-" + System.currentTimeMillis();
+}
+}
+private static String parseParam(String query, String name) {
+if (query == null) return null;
+for (String pair : query.split("&")) {
+String[] kv = pair.split("=", 2);
+if (kv.length == 2 && kv[0].equals(name)) return kv[1];
+}
+return null;
+}
+private static String escape(String s) {
+return s == null ? "" : s.replace("\"", "'");
+}
+private static void respond(HttpExchange exchange, int status, String body) throws IOException
+  {
+byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+exchange.getResponseHeaders().set("Content-Type", "application/json");
+exchange.sendResponseHeaders(status, bytes.length);
+try (OutputStream os = exchange.getResponseBody()) {
+os.write(bytes);
+}
+}
+private static String getEnv(String name, String fallback) {
+String v = System.getenv(name);
+return (v == null || v.isBlank()) ? fallback : v;
+}
+}
